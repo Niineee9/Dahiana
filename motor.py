@@ -15,6 +15,7 @@ _SIN_VENTANA = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # solo existe en Wind
 
 
 def _argumentos() -> list[str]:
+    """Línea de comandos de llama-server con la configuración de MOTOR."""
     # -ngl 99: todo en la GPU · -np 1: una conversación · --load-mode none: sin copia en RAM
     # --reasoning off: sin modo "pensar" · muestreo recomendado por Qwen3 sin razonamiento
     return [
@@ -36,11 +37,20 @@ def esta_activo() -> bool:
 
 
 class Motor:
+    """Controla el proceso de llama-server: lo enciende cuando hace falta y lo apaga (modo juego)."""
+
     def __init__(self):
         self._proceso: subprocess.Popen | None = None
 
     def encender(self, espera: float = 120) -> bool:
-        """Enciende el servidor si hace falta y espera a que el modelo cargue."""
+        """Enciende el servidor si hace falta y espera a que el modelo cargue.
+
+        Args:
+            espera: Segundos máximos de espera (la primera carga desde disco puede tardar).
+
+        Returns:
+            True si el modelo quedó listo; False si el proceso falló o se agotó la espera.
+        """
         if esta_activo():
             return True
         if self._proceso is None or self._proceso.poll() is not None:

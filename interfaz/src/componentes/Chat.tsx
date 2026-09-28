@@ -7,9 +7,15 @@ const ESTILOS: Record<Mensaje["autor"], string> = {
   nine: "self-end rounded-br-md bg-violet-600/80 text-white",
   dahiana: "self-start rounded-bl-md bg-white/10 text-violet-50",
   accion: "self-start bg-transparent px-1 py-0 text-xs text-fuchsia-300/80",
+  aviso: "self-center bg-transparent py-0 text-xs text-violet-300/60",
   error: "self-center bg-rose-500/15 text-xs text-rose-200",
 };
 
+/**
+ * Lista de mensajes con desplazamiento automático al último.
+ * @param mensajes - La conversación.
+ * @param pensando - Muestra los tres puntitos mientras Dahiana responde.
+ */
 export function Chat({ mensajes, pensando }: { mensajes: Mensaje[]; pensando: boolean }) {
   const final = useRef<HTMLDivElement>(null);
 
