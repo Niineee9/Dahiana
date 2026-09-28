@@ -11,7 +11,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[cfg(windows)]
@@ -21,6 +21,8 @@ use std::os::windows::process::CommandExt;
 const SIN_VENTANA: u32 = 0x0800_0000; // CREATE_NO_WINDOW: Python sin consola
 const VENTANA: &str = "principal";
 const MARGEN: i32 = 12; // separación del borde de la pantalla, en píxeles
+const TAMANO_CHAT: (f64, f64) = (380.0, 580.0); // ancho y alto lógicos (igual que tauri.conf.json)
+const TAMANO_ORBE: (f64, f64) = (170.0, 200.0); // solo el orbe flotante y sus dos botones
 
 /// El proceso de servicio.py y el último estado del motor (por si la interfaz se lo perdió).
 #[derive(Default)]
@@ -30,6 +32,7 @@ struct Servicio {
     estado_motor: Mutex<String>,
 }
 
+/// Carpeta raíz de Dahiana, donde están servicio.py y config.py.
 fn raiz_proyecto() -> PathBuf {
     // En desarrollo: interfaz/src-tauri -> raíz de Dahiana. Se puede cambiar con DAHIANA_RAIZ.
     std::env::var("DAHIANA_RAIZ")
@@ -39,6 +42,7 @@ fn raiz_proyecto() -> PathBuf {
 
 // ---------------------------------------------------------------- servicio (Python)
 
+/// Lanza servicio.py sin consola y reenvía cada línea JSON que imprime como evento "dahiana".
 fn iniciar_servicio(app: &AppHandle) -> std::io::Result<()> {
     let mut comando = Command::new("python");
     comando
@@ -87,6 +91,7 @@ fn iniciar_servicio(app: &AppHandle) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Envía una petición JSON a servicio.py por su entrada estándar.
 fn enviar_al_servicio(servicio: &Servicio, peticion: Value) -> Result<(), String> {
     let mut entrada = servicio.entrada.lock().map_err(|e| e.to_string())?;
     let entrada = entrada.as_mut().ok_or("El servicio no está en marcha.")?;
@@ -95,6 +100,7 @@ fn enviar_al_servicio(servicio: &Servicio, peticion: Value) -> Result<(), String
         .map_err(|e| e.to_string())
 }
 
+/// Cierra servicio.py con calma (apaga el modelo) y, si no responde en 10 s, lo mata.
 fn detener_servicio(servicio: &Servicio) {
     // Cerrar su entrada hace que servicio.py termine limpio y apague el modelo (libera la VRAM).
     servicio.entrada.lock().unwrap().take();
@@ -111,16 +117,31 @@ fn detener_servicio(servicio: &Servicio) {
 
 // ---------------------------------------------------------------- comandos para la interfaz
 
+/// Comando: envía a Dahiana un mensaje de Nine; con `hablar`, ella responde también en voz alta.
 #[tauri::command]
-fn enviar_mensaje(texto: String, servicio: tauri::State<Servicio>) -> Result<(), String> {
-    enviar_al_servicio(&servicio, json!({"tipo": "mensaje", "texto": texto}))
+fn enviar_mensaje(texto: String, hablar: bool, servicio: tauri::State<Servicio>) -> Result<(), String> {
+    enviar_al_servicio(&servicio, json!({"tipo": "mensaje", "texto": texto, "hablar": hablar}))
 }
 
+/// Comando: Dahiana escucha el micrófono hasta que Nine termina de hablar, y responde con voz.
+#[tauri::command]
+fn escuchar(servicio: tauri::State<Servicio>) -> Result<(), String> {
+    enviar_al_servicio(&servicio, json!({"tipo": "escuchar"}))
+}
+
+/// Comando: deja de escuchar el micrófono.
+#[tauri::command]
+fn cancelar_escucha(servicio: tauri::State<Servicio>) -> Result<(), String> {
+    enviar_al_servicio(&servicio, json!({"tipo": "cancelar"}))
+}
+
+/// Comando: Dahiana olvida la conversación actual.
 #[tauri::command]
 fn reiniciar_conversacion(servicio: tauri::State<Servicio>) -> Result<(), String> {
     enviar_al_servicio(&servicio, json!({"tipo": "reiniciar"}))
 }
 
+/// Comando: enciende o apaga el modelo ("apagar" = modo juego).
 #[tauri::command]
 fn controlar_motor(accion: String, servicio: tauri::State<Servicio>) -> Result<(), String> {
     if accion != "encender" && accion != "apagar" {
@@ -129,6 +150,46 @@ fn controlar_motor(accion: String, servicio: tauri::State<Servicio>) -> Result<(
     enviar_al_servicio(&servicio, json!({"tipo": "motor", "accion": accion}))
 }
 
+/// Comando: le dice al servicio cómo está la interfaz (voz activada, modo orbe) y si Dahiana puede
+/// comentar lo que Nine hace (`atenta`). Decide cuándo habla sola y si sus iniciativas suenan.
+#[tauri::command]
+fn enviar_preferencias(voz: bool, orbe: bool, atenta: bool, servicio: tauri::State<Servicio>) -> Result<(), String> {
+    enviar_al_servicio(&servicio, json!({"tipo": "preferencias", "voz": voz, "orbe": orbe, "atenta": atenta}))
+}
+
+/// Comando: achica la ventana a solo el orbe (`compacta`) o la agranda para el chat, junto al reloj.
+#[tauri::command]
+fn ajustar_ventana(compacta: bool, app: AppHandle) -> Result<(), String> {
+    let ventana = app.get_webview_window(VENTANA).ok_or("No encontré la ventana de Dahiana.")?;
+    let (ancho, alto) = if compacta { TAMANO_ORBE } else { TAMANO_CHAT };
+    ventana.set_size(LogicalSize::new(ancho, alto)).map_err(|e| e.to_string())?;
+    colocar_junto_al_reloj(&app);
+    Ok(())
+}
+
+/// Comando: posición del cursor relativa al contenido de la ventana, en píxeles lógicos (como el CSS).
+/// Funciona aunque el cursor esté fuera de la ventana: así el orbe puede "mirarlo".
+#[tauri::command]
+fn cursor_relativo(app: AppHandle) -> Result<(f64, f64), String> {
+    let ventana = app.get_webview_window(VENTANA).ok_or("No encontré la ventana de Dahiana.")?;
+    let cursor = ventana.cursor_position().map_err(|e| e.to_string())?;
+    let origen = ventana.inner_position().map_err(|e| e.to_string())?;
+    let escala = ventana.scale_factor().map_err(|e| e.to_string())?;
+    Ok(((cursor.x - origen.x as f64) / escala, (cursor.y - origen.y as f64) / escala))
+}
+
+/// Comando: muestra la ventana junto al reloj sin quitarle el foco a lo que Nine está usando.
+#[tauri::command]
+fn mostrar_sin_foco(app: AppHandle) -> Result<(), String> {
+    let ventana = app.get_webview_window(VENTANA).ok_or("No encontré la ventana de Dahiana.")?;
+    if !ventana.is_visible().unwrap_or(false) {
+        colocar_junto_al_reloj(&app);
+        ventana.show().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Comando: último estado conocido del motor (cargando, encendido, apagado o fallo).
 #[tauri::command]
 fn estado_motor(servicio: tauri::State<Servicio>) -> String {
     servicio.estado_motor.lock().unwrap().clone()
@@ -136,6 +197,7 @@ fn estado_motor(servicio: tauri::State<Servicio>) -> String {
 
 // ---------------------------------------------------------------- ventana
 
+/// Coloca la ventana en la esquina inferior derecha, sobre la barra de tareas.
 fn colocar_junto_al_reloj(app: &AppHandle) {
     let Some(ventana) = app.get_webview_window(VENTANA) else { return };
     let monitor = ventana.current_monitor().ok().flatten().or_else(|| ventana.primary_monitor().ok().flatten());
@@ -146,6 +208,7 @@ fn colocar_junto_al_reloj(app: &AppHandle) {
     let _ = ventana.set_position(PhysicalPosition::new(x, y));
 }
 
+/// Muestra la ventana junto al reloj y le da el foco.
 fn mostrar_ventana(app: &AppHandle) {
     if let Some(ventana) = app.get_webview_window(VENTANA) {
         colocar_junto_al_reloj(app);
@@ -154,6 +217,7 @@ fn mostrar_ventana(app: &AppHandle) {
     }
 }
 
+/// Muestra la ventana si está oculta, o la oculta si está visible.
 fn alternar_ventana(app: &AppHandle) {
     match app.get_webview_window(VENTANA) {
         Some(ventana) if ventana.is_visible().unwrap_or(false) => {
@@ -163,13 +227,15 @@ fn alternar_ventana(app: &AppHandle) {
     }
 }
 
-// ---------------------------------------------------------------- bandeja y atajo
+// ---------------------------------------------------------------- bandeja y atajos
 
+/// Crea el ícono del orbe en la bandeja del sistema con su menú.
 fn crear_bandeja(app: &AppHandle) -> tauri::Result<()> {
     let mostrar = MenuItem::with_id(app, "mostrar", "Mostrar / ocultar  (Ctrl+Alt+D)", true, None::<&str>)?;
+    let hablarle = MenuItem::with_id(app, "hablarle", "Hablarle  (Ctrl+Alt+H)", true, None::<&str>)?;
     let modo_juego = MenuItem::with_id(app, "modo_juego", "Modo juego (liberar VRAM)", true, None::<&str>)?;
     let salir = MenuItem::with_id(app, "salir", "Salir", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&mostrar, &modo_juego, &salir])?;
+    let menu = Menu::with_items(app, &[&mostrar, &hablarle, &modo_juego, &salir])?;
 
     TrayIconBuilder::with_id("dahiana")
         .icon(app.default_window_icon().expect("ícono de la app").clone())
@@ -178,6 +244,7 @@ fn crear_bandeja(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, evento| match evento.id.as_ref() {
             "mostrar" => alternar_ventana(app),
+            "hablarle" => pedir_que_escuche(app),
             "modo_juego" => {
                 let peticion = json!({"tipo": "motor", "accion": "apagar"});
                 let _ = enviar_al_servicio(&app.state::<Servicio>(), peticion);
@@ -194,23 +261,43 @@ fn crear_bandeja(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn registrar_atajo(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let atajo = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
+/// Muestra la ventana y le pide a la interfaz que empiece a escuchar.
+/// Lo decide la interfaz (y no Rust) porque ella sabe si hay que cortar una voz que está sonando.
+fn pedir_que_escuche(app: &AppHandle) {
+    mostrar_ventana(app);
+    let _ = app.emit("atajo_escuchar", ());
+}
+
+/// Registra los atajos globales: Ctrl+Alt+D (mostrar u ocultar) y Ctrl+Alt+H (hablarle).
+/// Si otro programa ya usa uno, se avisa y Dahiana sigue funcionando (la bandeja tiene lo mismo).
+fn registrar_atajos(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let mostrar = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
+    let hablarle = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyH);
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
             .with_handler(move |app, pulsado, evento| {
-                if pulsado == &atajo && evento.state() == ShortcutState::Pressed {
+                if evento.state() != ShortcutState::Pressed {
+                    return;
+                }
+                if pulsado == &mostrar {
                     alternar_ventana(app);
+                } else if pulsado == &hablarle {
+                    pedir_que_escuche(app);
                 }
             })
             .build(),
     )?;
-    app.global_shortcut().register(atajo)?;
+    for (atajo, nombre) in [(mostrar, "Ctrl+Alt+D"), (hablarle, "Ctrl+Alt+H")] {
+        if let Err(error) = app.global_shortcut().register(atajo) {
+            eprintln!("[atajos] No pude registrar {nombre} (¿lo usa otro programa?): {error}");
+        }
+    }
     Ok(())
 }
 
 // ---------------------------------------------------------------- arranque
 
+/// Punto de entrada de la app: configura Tauri, arranca el servicio y maneja el cierre.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -219,8 +306,14 @@ pub fn run() {
         .manage(Servicio::default())
         .invoke_handler(tauri::generate_handler![
             enviar_mensaje,
+            escuchar,
+            cancelar_escucha,
             reiniciar_conversacion,
             controlar_motor,
+            ajustar_ventana,
+            enviar_preferencias,
+            cursor_relativo,
+            mostrar_sin_foco,
             estado_motor
         ])
         .on_window_event(|ventana, evento| {
@@ -232,7 +325,7 @@ pub fn run() {
         })
         .setup(|app| {
             crear_bandeja(app.handle())?;
-            registrar_atajo(app.handle())?;
+            registrar_atajos(app.handle())?;
             iniciar_servicio(app.handle())?;
             mostrar_ventana(app.handle());
             Ok(())

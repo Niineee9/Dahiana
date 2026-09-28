@@ -1,2 +1,6 @@
 openai>=1.40
 psutil>=5.9
+# Voz (Fase 2)
+faster-whisper>=1.2   # voz a texto (Whisper en CPU, con detección de voz Silero)
+sounddevice>=0.5      # grabar el micrófono
+edge-tts>=7.0         # texto a voz con las voces neuronales de Microsoft (en línea)

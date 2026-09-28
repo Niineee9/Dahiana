@@ -1,2 +1,5 @@
-# Auto detect text files and perform LF normalization
+# Detecta archivos de texto y normaliza los finales de línea en el repositorio
 * text=auto
+
+# Los scripts .bat necesitan CRLF: con LF, cmd.exe a veces los ejecuta mal
+*.bat text eol=crlf

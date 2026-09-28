@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Datos y notas personales: se quedan solo en tu PC
+config_local.py
+CLAUDE.md
+
+# Registros
+*.log
+
+# Editores y sistema
+.idea/
+Thumbs.db
+
+# La interfaz (node_modules, dist, target) tiene sus propios .gitignore en interfaz/
