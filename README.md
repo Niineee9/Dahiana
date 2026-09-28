@@ -126,17 +126,14 @@ Algunas cosas para decirle:
 - **Sale de tu PC:** el texto de sus respuestas cuando habla (Edge TTS, servidores de Microsoft) y las
   búsquedas y la reproducción de Spotify. Sin internet, usa la voz de Windows.
 
-## Hoja de ruta
+## Hacia dónde va
 
-- [x] Texto y herramientas con un modelo local
-- [x] Interfaz: orbe en la bandeja, modo orbe y modo juego
-- [x] Voz: pulsar para hablar y respuestas habladas
-- [x] Memoria a largo plazo
-- [x] Iniciativa propia, estados de ánimo y orbe con vida propia
-- [ ] Modo manos libres (conversar sin pulsar nada)
-- [ ] "Oye Dahiana" (palabra de activación)
-- [ ] Avatar anime
-- [ ] Recordatorios y rutinas
+Queremos que Dahiana se sienta cada vez más como una compañera y menos como un programa: poder
+conversar con ella sin pulsar nada, llamarla con un "Oye Dahiana", darle un avatar que exprese lo que
+siente y que te ayude con recordatorios y rutinas del día a día.
+
+Pero lo más importante para nosotros es su personalidad. Cada cambio, por técnico que sea, debe
+cuidar que Dahiana siga siendo tierna, curiosa, honesta y cercana.
 
 ## Contribuir
 
