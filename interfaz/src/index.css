@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --color-noche: #120a20; /* fondo del panel */
+}
+
+/* La ventana es transparente: solo el panel redondeado se ve. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  @apply font-sans text-white antialiased select-none;
+}
+
+/* Barra de desplazamiento discreta */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-white/15;
+}

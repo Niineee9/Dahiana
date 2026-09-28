@@ -1,0 +1,2 @@
+openai>=1.40
+psutil>=5.9
