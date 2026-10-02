@@ -27,7 +27,11 @@ type EventoServicio =
   | { tipo: "iniciativa"; texto: string; animo: Animo }
   | { tipo: "voz"; audio: string }
   | { tipo: "vista"; vista: Vista }
+  | { tipo: "atuendo"; atuendo: Atuendo }
   | { tipo: "error"; texto: string };
+
+/** La ropa que lleva Dahiana (atuendo.py): la de diario, la de fin de semana o su traje de animadora. */
+export type Atuendo = "normal" | "fin_de_semana" | "animadora";
 
 /** "chat": panel completo · "orbe": solo el orbe flotante, sin la conversación. */
 export type Vista = "chat" | "orbe";
@@ -46,7 +50,6 @@ const ESTADO_POR_MOTOR: Record<EstadoMotor, EstadoDahiana> = {
 
 // Preferencias guardadas en el navegador interno.
 const CLAVE_VOZ = "dahiana.voz";
-const CLAVE_VISTA = "dahiana.vista";
 const CLAVE_ATENTA = "dahiana.atenta";
 
 type Almacen = {
@@ -58,8 +61,10 @@ type Almacen = {
   /** Si Dahiana puede comentar lo que Nine hace (horas jugando, programar de madrugada, música). */
   atenta: boolean;
   vista: Vista;
+  /** null hasta que el servicio dice qué ropa lleva (el avatar espera un momento antes de cargarse). */
+  atuendo: Atuendo | null;
   alternarAtenta: () => void;
-  /** Cambia entre el chat y el orbe solo (achica o agranda la ventana). */
+  /** Cambia entre el chat y Dahiana sola, de cuerpo entero (ajusta el tamaño de la ventana). */
   cambiarVista: (vista: Vista) => void;
   enviar: (texto: string) => void;
   /** Empieza a escuchar el micrófono o, si ya escucha, deja de hacerlo. */
@@ -76,7 +81,9 @@ export const useDahiana = create<Almacen>((set, get) => ({
   mensajes: [],
   vozActivada: leerPreferencia(CLAVE_VOZ, "true") !== "false",
   atenta: leerPreferencia(CLAVE_ATENTA, "true") !== "false",
-  vista: leerPreferencia(CLAVE_VISTA, "chat") === "orbe" ? "orbe" : "chat",
+  // Siempre arranca sin el chat: solo se abre cuando Nine lo pide (botón o "abre el chat").
+  vista: "orbe",
+  atuendo: null,
 
   alternarAtenta: () => {
     const atenta = !get().atenta;
@@ -87,7 +94,6 @@ export const useDahiana = create<Almacen>((set, get) => ({
 
   cambiarVista: (vista) => {
     set({ vista });
-    guardarPreferencia(CLAVE_VISTA, vista);
     invoke("ajustar_ventana", { compacta: vista === "orbe" }).catch(mostrarError);
     enviarPreferencias();
   },
@@ -226,6 +232,9 @@ function atenderEvento(evento: EventoServicio) {
     case "vista":
       useDahiana.getState().cambiarVista(evento.vista);
       break;
+    case "atuendo":
+      useDahiana.setState({ atuendo: evento.atuendo });
+      break;
     case "error":
       if (["pensando", "escuchando"].includes(estadoActual())) cambiarEstado("reposo");
       mostrarError(evento.texto);
@@ -235,8 +244,8 @@ function atenderEvento(evento: EventoServicio) {
 
 /** Escucha los eventos del servicio y del atajo de voz. Se llama una sola vez al arrancar. */
 export async function conectarConDahiana() {
-  // La ventana arranca en tamaño de chat: si la última vez quedó en modo orbe, se achica.
-  if (useDahiana.getState().vista === "orbe") useDahiana.getState().cambiarVista("orbe");
+  // La ventana nace con el tamaño del chat (tauri.conf.json): se ajusta a la vista inicial.
+  useDahiana.getState().cambiarVista(useDahiana.getState().vista);
   await listen<EventoServicio>("dahiana", ({ payload }) => atenderEvento(payload));
   // Ctrl+Alt+H (o "Hablarle" en la bandeja): empieza a escuchar.
   await listen("atajo_escuchar", () => {

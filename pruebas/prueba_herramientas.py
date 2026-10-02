@@ -169,7 +169,7 @@ class PruebaVista(unittest.TestCase):
     def test_avisa_a_la_interfaz(self):
         avisos = []
         with patch.object(tools, "avisar_a_la_interfaz", avisos.append):
-            self.assertIn("solo se ve el orbe", tools.cambiar_vista("orbe"))
+            self.assertIn("cerré el chat", tools.cambiar_vista("orbe"))
             tools.cambiar_vista("chat")
         self.assertEqual(avisos, [{"tipo": "vista", "vista": "orbe"}, {"tipo": "vista", "vista": "chat"}])
 

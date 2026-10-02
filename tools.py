@@ -378,10 +378,10 @@ avisar_a_la_interfaz: Callable[[dict], None] | None = None
 
 
 def cambiar_vista(vista: typing.Literal["orbe", "chat"]) -> str:
-    """Oculta el chat y deja solo el orbe flotante, o vuelve a mostrar el chat. Úsala solo si Nine lo pide.
+    """Abre el chat (la conversación escrita) o lo cierra para que se te vea solo a ti, de cuerpo entero. Úsala solo si Nine lo pide.
 
     Args:
-        vista: "orbe" para ver solo el orbe (sin la conversación) o "chat" para volver a verla.
+        vista: "chat" para abrir la conversación o "orbe" para cerrarla y que se te vea solo a ti.
 
     Returns:
         Resultado de la operación.
@@ -389,7 +389,7 @@ def cambiar_vista(vista: typing.Literal["orbe", "chat"]) -> str:
     if avisar_a_la_interfaz is None:
         return "Eso solo funciona en la interfaz, no en la terminal."
     avisar_a_la_interfaz({"tipo": "vista", "vista": vista})
-    return "Listo: ahora solo se ve el orbe." if vista == "orbe" else "Listo: el chat se ve otra vez."
+    return "Listo: cerré el chat, ahora solo se te ve a ti." if vista == "orbe" else "Listo: el chat está abierto."
 
 
 def controlar_musica(accion: typing.Literal["pausar", "reanudar", "siguiente", "anterior"]) -> str:

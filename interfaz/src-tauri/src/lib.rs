@@ -22,7 +22,7 @@ const SIN_VENTANA: u32 = 0x0800_0000; // CREATE_NO_WINDOW: Python sin consola
 const VENTANA: &str = "principal";
 const MARGEN: i32 = 12; // separación del borde de la pantalla, en píxeles
 const TAMANO_CHAT: (f64, f64) = (380.0, 580.0); // ancho y alto lógicos (igual que tauri.conf.json)
-const TAMANO_ORBE: (f64, f64) = (170.0, 200.0); // solo el orbe flotante y sus dos botones
+const TAMANO_ORBE: (f64, f64) = (300.0, 560.0); // Dahiana sola, de cuerpo entero (o el orbe si no hay avatar)
 
 /// El proceso de servicio.py y el último estado del motor (por si la interfaz se lo perdió).
 #[derive(Default)]
@@ -157,7 +157,7 @@ fn enviar_preferencias(voz: bool, orbe: bool, atenta: bool, servicio: tauri::Sta
     enviar_al_servicio(&servicio, json!({"tipo": "preferencias", "voz": voz, "orbe": orbe, "atenta": atenta}))
 }
 
-/// Comando: achica la ventana a solo el orbe (`compacta`) o la agranda para el chat, junto al reloj.
+/// Comando: ajusta la ventana a Dahiana sola, sin chat (`compacta`), o al chat, junto al reloj.
 #[tauri::command]
 fn ajustar_ventana(compacta: bool, app: AppHandle) -> Result<(), String> {
     let ventana = app.get_webview_window(VENTANA).ok_or("No encontré la ventana de Dahiana.")?;
