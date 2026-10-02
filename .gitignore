@@ -7,6 +7,11 @@ __pycache__/
 config_local.py
 CLAUDE.md
 
+# Avatar 3D de Dahiana (diseño propio de Nine): el proyecto de VRoid y el .vrm exportado no se suben
+# hasta que Nine decida publicarlos.
+*.vroid
+interfaz/public/avatar/
+
 # Registros
 *.log
 

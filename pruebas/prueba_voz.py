@@ -25,7 +25,8 @@ def _bloques(segundos: float) -> int:
 class PruebaDetectorDeSilencio(unittest.TestCase):
     def test_detecta_inicio_y_fin_de_la_voz(self):
         detector = voz.DetectorDeSilencio()
-        estados = _procesar(detector, [SILENCIO] * _bloques(0.5) + [VOZ] * _bloques(1) + [SILENCIO] * _bloques(1))
+        silencio = detector.silencio_final + 0.1
+        estados = _procesar(detector, [SILENCIO] * _bloques(0.5) + [VOZ] * _bloques(1) + [SILENCIO] * _bloques(silencio))
         self.assertIn("hablando", estados)
         self.assertEqual(estados[-1], "terminado")
 
@@ -54,6 +55,13 @@ class PruebaAudio(unittest.TestCase):
     def test_remuestrear_a_16_khz(self):
         un_segundo = np.zeros(44_100, dtype=np.float32)
         self.assertEqual(len(voz._remuestrear(un_segundo, 44_100)), voz.FRECUENCIA)
+
+    def test_remuestrear_filtra_los_agudos(self):
+        # A 16 kHz no cabe nada sobre 8 kHz: sin filtro, un tono de 12 kHz se "dobla" a 4 kHz, sobre la voz.
+        tiempo = np.arange(48_000) / 48_000
+        energia = lambda tono: float(np.sqrt(np.mean(voz._remuestrear(np.sin(2 * np.pi * tono * tiempo), 48_000)[500:-500] ** 2)))
+        self.assertGreater(energia(1_000), 0.65)  # la voz pasa casi intacta (un seno puro da 0,71)
+        self.assertLess(energia(12_000), 0.02)
 
     def test_pronunciacion(self):
         with patch.dict(voz.VOZ, {"pronunciacion": {"Nine": "Nain"}}):

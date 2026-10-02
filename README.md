@@ -25,7 +25,12 @@ Dahiana no quiere ser solo un asistente que ejecuta órdenes. Lo que la define e
   vivió contigo, y los retoma otro día: "¿cómo te fue en el examen?".
 - **Te habla primero.** Te saluda al llegar, te escribe tras un silencio largo y comenta de vez en
   cuando lo que haces, sin molestar.
-- **Tiene ánimo propio.** El orbe cambia de color según cómo se siente y su voz cambia de tono.
+- **Tiene ánimo propio.** Su cara (o el orbe) cambia según cómo se siente y su voz cambia de tono.
+- **Tiene cuerpo.** Un avatar 3D que parpadea, respira, te sigue con la mirada y mueve la boca al
+  hablar. Si no le pones uno, se muestra como un orbe morado.
+- **Tiene ropa para cada ocasión.** Los fines de semana se pone su ropa favorita (y se siente bonita);
+  si le dices que vas a estudiar o que estás cansado, se pone su traje de animadora para darte ánimos
+  y no se lo quita hasta que le pidas volver a su ropa normal.
 - **Es honesta.** Si no puede hacer algo o una acción falla, lo dice.
 
 ## Qué sabe hacer
@@ -37,7 +42,8 @@ Dahiana no quiere ser solo un asistente que ejecuta órdenes. Lo que la define e
 - Poner canciones, artistas, álbumes o playlists en Spotify (con la API oficial; requiere Premium).
 - Decirte la hora y el estado del PC (CPU, RAM, disco).
 - Escucharte por micrófono y responderte en voz alta.
-- **Modo orbe:** oculta el chat y queda solo el orbe flotando ("Dahiana, oculta el chat").
+- **Sin chat por defecto:** se la ve a ella de cuerpo entero junto al reloj; el chat se abre con el
+  botón o diciéndole "abre el chat" (y se cierra con "cierra el chat").
 - **Modo juego:** apaga el modelo para liberar la VRAM; escribirle la despierta.
 
 ## Cómo funciona
@@ -56,6 +62,7 @@ Interfaz (Tauri: Rust + React)  ──JSON por stdin/stdout──►  servicio.p
 | `config.py`             | Modelo, voz, **personalidad**, gustos, atajos de apps y sitios      |
 | `memoria.py`            | Memoria a largo plazo: lo que sabe de ti y los momentos vividos     |
 | `iniciativa.py`         | Cuándo hablarte primero (saludo, silencio, horas jugando, música)   |
+| `atuendo.py`            | Qué ropa lleva (normal, fin de semana o animadora) y cuándo cambia  |
 | `voz.py`                | Escuchar (micrófono → Whisper) y hablar (Edge TTS o voz de Windows) |
 | `spotify.py`            | Poner música con la API de Spotify                                  |
 | `motor.py`              | Enciende y apaga llama-server (modo juego)                          |
@@ -93,13 +100,17 @@ Se desarrolla con una GPU AMD de 16 GB (Radeon RX 7800 XT) y 32 GB de RAM.
    [panel de desarrolladores](https://developer.spotify.com/dashboard) con el Redirect URI
    `http://127.0.0.1:8888/callback`, pon su Client ID en `config_local.py` y ejecuta
    `python spotify.py` una vez para autorizar en el navegador.
+6. **Avatar 3D (opcional):** exporta un modelo de VRoid Studio como VRM y guárdalo en
+   `interfaz/public/avatar/dahiana.vrm`. El de Dahiana no se incluye; sin él, se muestra el orbe.
+   Para su otra ropa, agrega `dahiana_fin_de_semana.vrm` y `dahiana_animadora.vrm` en la misma carpeta
+   (opcionales: si falta alguno, usa el de siempre).
 
 ## Uso
 
 - **Con interfaz:** doble clic en `iniciar_dahiana.bat`. Enciende el modelo sola y lo apaga al salir.
   - `Ctrl+Alt+D`: mostrar u ocultar. `Ctrl+Alt+H`: hablarle. `Esc`: ocultar o dejar de escuchar.
   - Botones de la barra: voz, "atenta" (si comenta lo que haces), modo juego, nueva conversación y
-    modo orbe.
+    cerrar el chat.
 - **Por terminal:** `iniciar_modelo.bat` (deja esa ventana abierta) y luego `python main.py`.
 
 Algunas cosas para decirle:
@@ -107,7 +118,7 @@ Algunas cosas para decirle:
 - `pon Tití me preguntó de Bad Bunny` / `¿qué está sonando?` / `pausa la música`
 - `¿qué hora es?` / `¿cómo va el PC?` / `¿con quién estoy hablando en Discord?`
 - `hoy fue un día pesado` / `me fue bien en el examen` / `¿por qué soñamos?`
-- `oculta el chat` / `olvida lo de mi gata`
+- `abre el chat` / `cierra el chat` / `olvida lo de mi gata`
 
 ## Personalizar
 
@@ -129,8 +140,8 @@ Algunas cosas para decirle:
 ## Hacia dónde va
 
 Queremos que Dahiana se sienta cada vez más como una compañera y menos como un programa: poder
-conversar con ella sin pulsar nada, llamarla con un "Oye Dahiana", darle un avatar que exprese lo que
-siente y que te ayude con recordatorios y rutinas del día a día.
+conversar con ella sin pulsar nada, llamarla con un "Oye Dahiana", que su avatar se mueva y exprese cada vez
+más lo que siente y que te ayude con recordatorios y rutinas del día a día.
 
 Pero lo más importante para nosotros es su personalidad. Cada cambio, por técnico que sea, debe
 cuidar que Dahiana siga siendo tierna, curiosa, honesta y cercana.

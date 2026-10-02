@@ -17,7 +17,9 @@ La interfaz lanza este proceso y se comunican con una línea JSON por mensaje.
                     {"tipo": "respuesta", "texto": "...", "animo": "alegre" | "tierna" | ...}
                     {"tipo": "iniciativa", "texto": "...", "animo": "..."}   (Dahiana habla primero)
                     {"tipo": "voz", "audio": "data:audio/mpeg;base64,..."}   (después de "respuesta"/"iniciativa")
-                    {"tipo": "vista", "vista": "orbe" | "chat"}   (Nine pidió ocultar o mostrar el chat)
+                    {"tipo": "vista", "vista": "orbe" | "chat"}   (Nine pidió cerrar o abrir el chat)
+                    {"tipo": "atuendo", "atuendo": "normal" | "fin_de_semana" | "animadora"}   (al arrancar y
+                     cuando cambia su ropa; ver atuendo.py)
                     {"tipo": "error", "texto": "..."}
 
 stdout queda reservado para el protocolo: nada más debe imprimir ahí (los registros van a stderr).
@@ -35,6 +37,7 @@ from dataclasses import dataclass, field
 
 import openai
 
+import atuendo
 import spotify
 import tools
 from brain import Dahiana
@@ -60,6 +63,19 @@ class Sesion:
     # puede comentar lo que Nine hace (juego, código, música).
     preferencias: dict = field(default_factory=lambda: {"voz": True, "orbe": False, "atenta": True})
     candado: threading.Lock = field(default_factory=threading.Lock)  # protege al vigía
+    atuendo_enviado: str = ""  # la última ropa que se le avisó a la interfaz
+
+    def avisar_atuendo(self, siempre: bool = False) -> None:
+        """Si la ropa de Dahiana cambió (se puso el traje o empezó el fin de semana), se lo avisa a la interfaz.
+
+        Args:
+            siempre: Avisar aunque no haya cambiado (la interfaz recién empieza a escuchar).
+        """
+        with self.candado:  # lo llaman el hilo de peticiones y el del vigía
+            puesto = atuendo.actual()
+            if siempre or puesto != self.atuendo_enviado:
+                self.atuendo_enviado = puesto
+                _enviar({"tipo": "atuendo", "atuendo": puesto})
 
     def registrar_interaccion(self) -> None:
         """Nine le habló: el vigía reinicia la cuenta del silencio."""
@@ -115,6 +131,7 @@ def _responder(sesion: Sesion, texto: str, hablar: bool) -> None:
     except openai.APIError as error:
         _enviar({"tipo": "error", "texto": f"Error del servidor de modelos: {error}"})
         return
+    sesion.avisar_atuendo()  # si se puso el traje, que se vea justo cuando lo dice
     _enviar({"tipo": "respuesta", "texto": respuesta, "animo": sesion.dahiana.animo})
     if hablar and respuesta:
         _hablar(respuesta, sesion.dahiana.animo)
@@ -168,6 +185,7 @@ def _vigilar(sesion: Sesion, pendientes: queue.Queue, detener: threading.Event) 
     detener.wait(ESPERA_INICIAL)
     ultima_consulta_cancion = float("-inf")
     while not detener.is_set():
+        sesion.avisar_atuendo()  # el sábado a medianoche se pone sola la ropa de fin de semana
         cancion = None
         # Solo si puede comentar lo que hace y Spotify ya está autorizado (si no, abriría el navegador).
         if sesion.preferencias["atenta"] and spotify.conectado() \
@@ -239,6 +257,8 @@ def _atender(sesion: Sesion, vigilar: bool = True) -> None:
             elif tipo == "preferencias":
                 sesion.preferencias.update(
                     {clave: bool(peticion[clave]) for clave in sesion.preferencias if clave in peticion})
+                # La interfaz las manda al arrancar, ya escuchando: el aviso de "listo" pudo perderse.
+                sesion.avisar_atuendo(siempre=True)
             elif tipo == "reiniciar":
                 sesion.dahiana.reiniciar()
             elif tipo == "motor" and peticion.get("accion") == "apagar":
@@ -262,6 +282,7 @@ def main() -> None:
     sesion = Sesion(Dahiana(al_usar_herramienta=_avisar_accion), Motor(), Oido(), vigia)
     tools.avisar_a_la_interfaz = _enviar  # herramientas como cambiar_vista hablan con la interfaz
     _enviar({"tipo": "listo"})
+    sesion.avisar_atuendo()  # la interfaz carga la ropa que lleva puesta antes de mostrarla
     # Whisper se carga en paralelo con el modelo para que la primera escucha no espere.
     threading.Thread(target=sesion.oido.preparar, daemon=True).start()
     _encender(sesion.motor)
