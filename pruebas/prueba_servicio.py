@@ -23,14 +23,20 @@ def _sesion(lo_que_oye: str = "abre discord", al_escuchar=None) -> servicio.Sesi
     motor.encender.return_value = True
     oido.escuchar.return_value = lo_que_oye
     oido.escuchar.side_effect = al_escuchar
-    return servicio.Sesion(dahiana, motor, oido, MagicMock())
+    sesion = servicio.Sesion(dahiana, motor, oido, MagicMock())
+    sesion.atuendo_enviado = "normal"  # la interfaz ya sabe qué ropa lleva (ver _capturar)
+    return sesion
 
 
-def _capturar(funcion, *argumentos, activo: bool = True, entrada: str = "") -> list[dict]:
-    """Ejecuta una función del servicio y devuelve los eventos que envió a la interfaz."""
+def _capturar(funcion, *argumentos, activo: bool = True, entrada: str = "", ropa: str = "normal") -> list[dict]:
+    """Ejecuta una función del servicio y devuelve los eventos que envió a la interfaz.
+
+    `ropa` es lo que lleva puesto Dahiana (fijo: si no, dependería del día y de atuendo.json).
+    """
     salida = io.StringIO()
     with patch("sys.stdin", io.StringIO(entrada)), patch("sys.stdout", salida), \
          patch.object(servicio, "esta_activo", return_value=activo), \
+         patch.object(servicio.atuendo, "actual", return_value=ropa), \
          patch.object(servicio, "sintetizar", return_value=(b"mp3", "audio/mpeg")):
         funcion(*argumentos)
     return [json.loads(linea) for linea in salida.getvalue().splitlines()]
@@ -56,6 +62,17 @@ class PruebaProtocolo(unittest.TestCase):
     def test_mensaje_sin_voz(self):
         eventos, _ = _atender('{"tipo": "mensaje", "texto": "hola"}')
         self.assertEqual(eventos, [{"tipo": "pensando"}, RESPUESTA])
+
+    def test_si_se_cambio_de_ropa_se_ve_antes_de_la_respuesta(self):
+        sesion = _sesion()
+        eventos = _capturar(servicio._atender, sesion, False, entrada='{"tipo": "mensaje", "texto": "voy a estudiar"}\n',
+                            ropa="animadora")
+        self.assertEqual(eventos, [{"tipo": "pensando"}, {"tipo": "atuendo", "atuendo": "animadora"}, RESPUESTA])
+
+    def test_las_preferencias_reciben_la_ropa_puesta(self):
+        # La interfaz las manda al arrancar: el aviso de la ropa enviado antes pudo perderse.
+        eventos, _ = _atender('{"tipo": "preferencias", "voz": true}')
+        self.assertEqual(eventos, [{"tipo": "atuendo", "atuendo": "normal"}])
 
     def test_mensaje_con_voz_agrega_el_audio(self):
         eventos, _ = _atender('{"tipo": "mensaje", "texto": "hola", "hablar": true}')

@@ -21,9 +21,25 @@ cd src-tauri && cargo clippy      # revisa buenas prácticas de Rust
 | `src/estado.ts`             | Estado global y conexión con Rust (eventos `dahiana`, comandos)     |
 | `src/reproductor.ts`        | Reproduce la voz y mide su volumen para que el orbe "hable"         |
 | `src/App.tsx`               | Panel: barra superior, orbe, chat y campo de texto                  |
+| `src/componentes/Avatar.tsx` | Avatar 3D (three.js + @pixiv/three-vrm); si no hay modelo, el orbe |
+| `src/cuerpo.ts`             | Lenguaje corporal del avatar: posturas, respiración, peso, gestos    |
 | `src/componentes/Orbe.tsx`  | El orbe animado y sus estados                                       |
 | `src/componentes/Chat.tsx`  | Las burbujas de la conversación                                     |
-| `src/componentes/VistaOrbe.tsx` | Modo orbe: solo el orbe flotante (la ventana se achica a 170x200) |
+| `src/componentes/VistaOrbe.tsx` | Vista inicial, sin chat: Dahiana de cuerpo entero (ventana de 300x560) |
+
+## Avatar 3D
+
+El modelo de Dahiana es un diseño propio hecho en VRoid Studio y **no está en el repositorio**. Para
+usar el tuyo, expórtalo desde VRoid Studio como VRM (1.0 o 0.x) y guárdalo en
+`public/avatar/dahiana.vrm`. Sin ese archivo, Dahiana aparece como el orbe.
+
+Su ropa es un modelo por atuendo, con el mismo esqueleto: `dahiana_fin_de_semana.vrm` (sábados y
+domingos) y `dahiana_animadora.vrm` (cuando Nine estudia o está cansado). El servicio avisa cuál lleva
+con el evento `atuendo`; el avatar se funde, carga el modelo y hace un gesto (vuelta, porra o saltito).
+Si falta el archivo de una ropa, usa `dahiana.vrm`.
+
+El avatar usa las expresiones estándar de VRM: `happy`, `relaxed`, `surprised` y `sad` para el ánimo,
+`blink` para parpadear y `aa`/`oh` para mover la boca con la voz. Los modelos de VRoid ya las traen.
 
 ## Comunicación
 

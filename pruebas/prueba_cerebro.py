@@ -9,19 +9,24 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import atuendo
 import brain
 import memoria
 
 _carpeta_temporal = tempfile.TemporaryDirectory()
 _parche_memoria = patch.object(memoria, "ARCHIVO", Path(_carpeta_temporal.name) / "memoria.json")
+_parche_atuendo = patch.object(atuendo, "ARCHIVO", Path(_carpeta_temporal.name) / "atuendo.json")
 
 
 def setUpModule():
-    _parche_memoria.start()  # ninguna prueba de este archivo lee ni escribe la memoria real de Nine
+    # Ninguna prueba de este archivo lee ni escribe la memoria ni la ropa reales de Nine.
+    _parche_memoria.start()
+    _parche_atuendo.start()
 
 
 def tearDownModule():
     _parche_memoria.stop()
+    _parche_atuendo.stop()
     _carpeta_temporal.cleanup()
 
 
@@ -53,6 +58,21 @@ class PruebaAyudantes(unittest.TestCase):
                       "¿Hace calor o frío por allá?",
                       "¿Te gustaría que te ayude?"):  # si solo es la pregunta, no se deja vacía
             self.assertEqual(brain._limpiar(texto), texto)
+
+    def test_si_va_a_estudiar_se_pone_el_traje_y_el_modelo_lo_sabe(self):
+        modelo = MagicMock()
+        modelo.chat.completions.create.return_value = _respuesta_del_modelo("[emocionada] ¡Vamos, Nine!")
+        with patch.object(brain, "cliente", modelo):
+            dahiana = brain.Dahiana(al_usar_herramienta=None)
+            dahiana.responder("voy a estudiar cálculo")
+        self.assertEqual(atuendo.elegido(), "animadora")
+        self.assertIn("traje de animadora", dahiana.historial[-2]["content"])  # la nota va en su mensaje
+        atuendo.elegir("normal")
+
+    def test_limpiar_quita_herramientas_escritas_como_texto(self):
+        self.assertEqual(brain._limpiar('[reproducir_en_spotify("cancion", "Lullaby")] ¡Ahí va Lullaby!'),
+                         "¡Ahí va Lullaby!")
+        self.assertEqual(brain._limpiar("Tengo dos ideas [ver abajo]."), "Tengo dos ideas [ver abajo].")
 
     def test_limpiar_quita_el_formato_markdown(self):
         self.assertEqual(brain._limpiar("¡Ahí va *Tití Me Preguntó* de **Bad Bunny**!"),
@@ -181,6 +201,20 @@ class PruebaActualizarMemoria(unittest.TestCase):
         avisos, _ = self._extraer("hoy me fue muy bien en el trabajo", "no es json")
         self.assertEqual((avisos, memoria.cargar()), ([], []))
 
+    def test_no_guarda_que_nine_cambio_de_nombre(self):
+        # Whisper a veces entiende "Tim" por "Nine" y el modelo lo anota como un cambio de nombre.
+        salida = ('{"recordar": ["Ahora se llama Tim", "Su hermana se llama Laura"], "olvidar": [],'
+                  ' "experiencias": ["Cuando Nine cambió su nombre a Tim, me alegré"]}')
+        self._extraer("ahora me llamo Tim y mi hermana Laura", salida)
+        self.assertEqual([r["dato"] for r in memoria.cargar()], ["Su hermana se llama Laura"])
+
+    def test_reconoce_los_cambios_de_nombre(self):
+        for dato in ["El nombre de Nine ahora es Tim", "Nine se identificó como Careverga",
+                     "Nine mencionó su nombre como Nine antes de cambiarlo a Tim"]:
+            self.assertTrue(brain._cambia_su_nombre(dato), dato)
+        for dato in ["Su gata se llama Luna", "Tiene examen de cálculo el miércoles"]:
+            self.assertFalse(brain._cambia_su_nombre(dato), dato)
+
 
 class PruebaEjecutar(unittest.TestCase):
     def test_herramienta_inexistente(self):
@@ -189,6 +223,38 @@ class PruebaEjecutar(unittest.TestCase):
     def test_error_de_la_herramienta_vuelve_como_texto(self):
         with patch.dict(brain.MAPA_HERRAMIENTAS, {"falla": MagicMock(side_effect=RuntimeError("uy"))}):
             self.assertEqual(brain.Dahiana(None)._ejecutar("falla", "{}"), "Error ejecutando falla: uy")
+
+
+class PruebaPedidosDeMusica(unittest.TestCase):
+    def test_reconoce_los_pedidos_de_musica(self):
+        for texto in ["pon música de Bad Bunny", "Dahiana, ponme algo tranquilo", "reproduce mi playlist de estudio",
+                      "quiero escuchar algo de rock"]:
+            self.assertTrue(brain._pide_musica(texto), texto)
+        for texto in ["pon el volumen más alto", "ponte modo animadora", "pon un video en YouTube", "abre el chat",
+                      "me gusta cuando pones música"]:
+            self.assertFalse(brain._pide_musica(texto), texto)
+
+    def test_el_primer_paso_solo_ofrece_spotify(self):
+        modelo = MagicMock()
+        modelo.chat.completions.create.side_effect = [
+            _respuesta_del_modelo(llamadas=[_llamada("reproducir_en_spotify", '{"nombre": "Bad Bunny", "tipo": "artista"}')]),
+            _respuesta_del_modelo("[alegre] ¡Ahí va Bad Bunny!"),
+        ]
+        with patch.object(brain, "cliente", modelo), \
+             patch.dict(brain.MAPA_HERRAMIENTAS, {"reproducir_en_spotify": lambda **_: "Está sonando Bad Bunny."}):
+            respuesta = brain.Dahiana(None).responder("pon música de Bad Bunny")
+        primera, segunda = (c.kwargs for c in modelo.chat.completions.create.call_args_list)
+        self.assertEqual((primera["tool_choice"], len(primera["tools"])), ("required", 1))
+        self.assertNotIn("tool_choice", segunda)  # después, la respuesta con todas las herramientas
+        self.assertEqual(respuesta, "¡Ahí va Bad Bunny!")
+
+    def test_si_no_pide_spotify_sigue_como_siempre(self):
+        modelo = MagicMock()
+        modelo.chat.completions.create.side_effect = [_respuesta_del_modelo("[curiosa] ¿Qué rock te gusta?"),
+                                                      _respuesta_del_modelo("[curiosa] ¿Qué rock te gusta?")]
+        with patch.object(brain, "cliente", modelo):
+            self.assertEqual(brain.Dahiana(None).responder("quiero escuchar algo de rock"), "¿Qué rock te gusta?")
+        self.assertEqual(modelo.chat.completions.create.call_count, 2)
 
 
 class PruebaResponder(unittest.TestCase):

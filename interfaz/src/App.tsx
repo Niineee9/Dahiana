@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { Chat } from "./componentes/Chat";
-import { Orbe } from "./componentes/Orbe";
+import { Presencia } from "./componentes/Avatar";
 import { VistaOrbe } from "./componentes/VistaOrbe";
 import { type EstadoDahiana, useDahiana } from "./estado";
 
@@ -91,7 +91,7 @@ export default function App() {
           <Boton titulo="Nueva conversación" onClick={reiniciar}>
             <IconoNueva />
           </Boton>
-          <Boton titulo="Ocultar el chat (solo el orbe)" onClick={() => cambiarVista("orbe")}>
+          <Boton titulo="Cerrar el chat (solo Dahiana)" onClick={() => cambiarVista("orbe")}>
             <IconoSoloOrbe />
           </Boton>
           <Boton titulo="Ocultar (Esc)" onClick={ocultar}>
@@ -100,7 +100,14 @@ export default function App() {
         </header>
 
         <div data-tauri-drag-region className="flex justify-center">
-          <Orbe estado={estado} animo={animo} tamano={mensajes.length ? 64 : 112} />
+          <Presencia
+            estado={estado}
+            animo={animo}
+            ancho={mensajes.length ? 140 : 240}
+            alto={mensajes.length ? 110 : 220}
+            encuadre="busto"
+            tamanoOrbe={mensajes.length ? 64 : 112}
+          />
         </div>
 
         <Chat mensajes={mensajes} pensando={estado === "pensando"} />

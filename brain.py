@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from openai import OpenAI
 
+import atuendo
 import memoria
 from config import MAX_HISTORIAL, MODELO, NOMBRE_USUARIO, PERSONALIDAD, URL_SERVIDOR
 from tools import ESQUEMAS, MAPA_HERRAMIENTAS, fecha_hablada, hora_y_fecha
@@ -38,6 +39,8 @@ y fechas, personas y mascotas, cómo se siente con algo importante, metas.
 No anotes órdenes (abrir programas, poner música, la hora), saludos, preguntas de cultura general ni lo
 que ya está en la memoria. Si pide olvidar algo, ponlo en "olvidar" con sus palabras.
 Nunca pongas en "recordar" algo que ya está en la memoria actual.
+Su nombre es {NOMBRE_USUARIO} y no cambia: nunca anotes que se llama de otra forma ni que cambió de nombre
+(si el mensaje trae otro nombre, casi siempre es un error al entender su voz).
 Escribe cada recuerdo breve y en tercera persona. Convierte las fechas relativas ("el viernes",
 "mañana") en fechas concretas usando el calendario que te doy.
 En "experiencias" anota, desde el punto de vista de Dahiana y en primera persona, un momento que ella
@@ -70,9 +73,50 @@ _ESQUEMA_MEMORIA = {
 }
 PALABRAS_MINIMAS_PARA_RECORDAR = 3  # "abre steam" o "hola" no traen nada que recordar
 
+# Recuerdos que dicen que Nine se llama de otra forma. Su nombre está en config.py y no cambia: casi
+# siempre es Whisper entendiendo mal ("Tim" por "Nine"), y el modelo lo guarda aunque el prompt lo prohíba.
+_CAMBIO_DE_NOMBRE = re.compile(
+    rf"^(ahora\s+)?(se llama|su nombre)\b|\bnombre de {NOMBRE_USUARIO}\b|\b{NOMBRE_USUARIO} se llama\b"
+    r"|\bcambi\w*\s+(de\s+|su\s+|el\s+)?nombre|\bse identific\w*\s+como|\bllamarlo\b|\bsu nombre\s+(como|es|ahora)\b",
+    re.IGNORECASE,
+)
+
+
+def _cambia_su_nombre(dato: str) -> bool:
+    """True si el recuerdo dice que Nine se llama de otra forma (ver _CAMBIO_DE_NOMBRE).
+
+    Args:
+        dato: Recuerdo propuesto por el extractor.
+
+    Returns:
+        Si hay que descartarlo.
+    """
+    return bool(_CAMBIO_DE_NOMBRE.search(dato.strip()))
+
 
 # Marcas de formato Markdown (*cursiva*, **negrita**, `código`, # títulos): no se leen en voz alta.
 _FORMATO = re.compile(r"[*`#]")
+
+# Pedidos de música ("pon música de Bad Bunny"): con todas las herramientas a mano, el modelo a veces
+# contestaba "¡Ahí va!" sin poner nada o elegía YouTube. Para estos, el primer paso solo ofrece Spotify.
+_PIDE_MUSICA = re.compile(
+    r"^\W*(oye\W+)?(dahiana\W+)?(pon|ponme|ponnos|reproduce|reprodúceme|pásame|quiero (oír|escuchar))\b",
+    re.IGNORECASE,
+)
+_NO_ES_MUSICA = re.compile(r"\b(volumen|chat|alarma|recordatorio|traje|animadora|ropa|atuendo|youtube|v[ií]deo)\b",
+                           re.IGNORECASE)
+_SOLO_SPOTIFY = [e for e in ESQUEMAS if e["function"]["name"] == "reproducir_en_spotify"]
+MAX_TOKENS_PASO_FORZADO = 150  # solo pide la herramienta; sin tope, a veces se enredaba escribiendo sin parar
+
+
+def _pide_musica(texto: str) -> bool:
+    """True si el mensaje pide poner música (ver _PIDE_MUSICA)."""
+    return bool(_PIDE_MUSICA.search(texto)) and not _NO_ES_MUSICA.search(texto)
+
+
+# Herramientas "escritas" en vez de usadas ("[reproducir_en_spotify("Lullaby")]"): a veces el modelo imita
+# el formato de los ejemplos del prompt. No hacen nada y se leerían en voz alta, así que se quitan.
+_HERRAMIENTA_ESCRITA = re.compile(r"\[\s*\w+\([^\]]*\)\s*\]\s*")
 
 
 # Preguntas de relleno con que el modelo cierra casi todo ("¿Te gustaría que te cuente algo más?").
@@ -97,7 +141,8 @@ def _separar_animo(texto: str) -> tuple[str | None, str]:
 
 
 def _limpiar(texto: str) -> str:
-    """Quita emojis, marcas de formato, la pregunta de relleno del final y espacios sobrantes."""
+    """Quita emojis, marcas de formato, herramientas escritas, la pregunta de relleno del final y espacios sobrantes."""
+    texto = _HERRAMIENTA_ESCRITA.sub("", texto)
     texto = re.sub(r" {2,}", " ", _FORMATO.sub("", _EMOJIS.sub("", texto))).strip()
     sin_ofrecimiento = _OFRECIMIENTO_FINAL.sub("", texto).strip()
     return sin_ofrecimiento or texto  # si la respuesta era solo esa pregunta, se deja
@@ -124,8 +169,9 @@ def _prompt_de_sistema() -> str:
 
 
 def _contexto() -> str:
-    """Hora actual para que Dahiana pueda cuidar sin preguntar (descanso, comidas...)."""
-    return f"[Contexto: {hora_y_fecha()}]"  # ya incluye si es de mañana, tarde, noche o madrugada
+    """Hora actual (para cuidar sin preguntar: descanso, comidas...) y cómo se siente con su ropa."""
+    ropa = atuendo.como_te_sientes()
+    return f"[Contexto: {hora_y_fecha()}{' ' + ropa if ropa else ''}]"  # la hora ya dice si es de mañana, tarde...
 
 
 def _mostrar_accion(nombre: str, argumentos: str, resultado: str) -> None:
@@ -181,14 +227,26 @@ class Dahiana:
             openai.APIError: Si el servidor del modelo no responde o rechaza la petición.
         """
         self._recortar_historial()
+        # Si va a estudiar o está cansado se pone el traje de animadora (antes de armar el contexto, que lo dice).
+        if cambio := atuendo.atender_pedido(texto):
+            cambio = f"\n[Nota interna, no la escribió {NOMBRE_USUARIO}: {cambio}]"
         # El contexto va en el mensaje (no en el prompt de sistema) para no invalidar la caché del servidor.
-        self.historial.append({"role": "user", "content": f"{_contexto()}\n{texto}"})
+        self.historial.append({"role": "user", "content": f"{_contexto()}{cambio}\n{texto}"})
 
+        forzar_spotify = _pide_musica(texto)
         for _ in range(MAX_PASOS):
-            respuesta = cliente.chat.completions.create(
-                model=MODELO, messages=self.historial, tools=ESQUEMAS
-            )
-            mensaje = respuesta.choices[0].message
+            mensaje = None
+            if forzar_spotify:
+                forzar_spotify = False  # solo el primer paso
+                forzado = cliente.chat.completions.create(
+                    model=MODELO, messages=self.historial, tools=_SOLO_SPOTIFY, tool_choice="required",
+                    max_tokens=MAX_TOKENS_PASO_FORZADO,
+                ).choices[0].message
+                mensaje = forzado if forzado.tool_calls else None  # si no la pidió, sigue como siempre
+            if mensaje is None:
+                mensaje = cliente.chat.completions.create(
+                    model=MODELO, messages=self.historial, tools=ESQUEMAS
+                ).choices[0].message
 
             if not mensaje.tool_calls:
                 return self._guardar_respuesta(mensaje.content or "")
@@ -258,10 +316,10 @@ class Dahiana:
             if borrado := memoria.olvidar(dato):
                 self._avisar("olvidar", dato, f"Olvidé: {borrado}")
         for dato in cambios.get("recordar", []):
-            if dato.strip() and memoria.agregar(dato):  # solo avisa lo nuevo, no lo que ya sabía
+            if dato.strip() and not _cambia_su_nombre(dato) and memoria.agregar(dato):  # solo avisa lo nuevo, no lo que ya sabía
                 self._avisar("recordar", dato, f"Recordé: {dato.strip()}")
         for dato in cambios.get("experiencias", [])[:1]:  # como mucho una por mensaje
-            if dato.strip() and memoria.agregar(dato, tipo="experiencia"):
+            if dato.strip() and not _cambia_su_nombre(dato) and memoria.agregar(dato, tipo="experiencia"):
                 self._avisar("experiencia", dato, f"Guardé este momento: {dato.strip()}")
 
     def _ultimo_intercambio(self) -> str:

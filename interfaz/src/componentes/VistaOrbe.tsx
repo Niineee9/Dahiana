@@ -1,16 +1,21 @@
-// Modo orbe: Dahiana flotando junto al reloj, sin la conversación a la vista.
+// Vista principal: Dahiana de cuerpo entero (o el orbe si no hay avatar) junto al reloj, sin el chat.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent, ReactNode } from "react";
 import { useDahiana } from "../estado";
-import { Orbe } from "./Orbe";
+import { Presencia } from "./Avatar";
 
-/** Mover la ventana arrastrando el orbe (con el botón izquierdo). */
+// Del tamaño de la ventana en esta vista (TAMANO_ORBE en lib.rs), menos un respiro para los botones.
+// Más ancho que su cuerpo: al saludar o gesticular, las manos no deben salirse del lienzo.
+const ANCHO = 300;
+const ALTO = 520;
+
+/** Mover la ventana arrastrando a Dahiana (con el botón izquierdo). */
 const arrastrar = (e: MouseEvent) => {
   if (e.button === 0) void getCurrentWindow().startDragging();
 };
 
 /**
- * Vista compacta: solo el orbe. Al pasar el mouse aparecen los botones para hablarle o volver al chat.
+ * Vista sin chat: solo Dahiana. Al pasar el mouse aparecen los botones para hablarle o abrir el chat.
  * @param textoEstado - Descripción del estado (se muestra como ayuda al pasar el mouse).
  */
 export function VistaOrbe({ textoEstado }: { textoEstado: string }) {
@@ -20,7 +25,7 @@ export function VistaOrbe({ textoEstado }: { textoEstado: string }) {
   return (
     <div className="group relative grid h-full place-items-center">
       <div title={`Dahiana · ${textoEstado}`} onMouseDown={arrastrar} className="cursor-grab active:cursor-grabbing">
-        <Orbe estado={estado} animo={animo} tamano={76} />
+        <Presencia estado={estado} animo={animo} ancho={ANCHO} alto={ALTO} encuadre="cuerpo" tamanoOrbe={76} />
       </div>
 
       <div
@@ -38,7 +43,7 @@ export function VistaOrbe({ textoEstado }: { textoEstado: string }) {
             <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
           </svg>
         </BotonFlotante>
-        <BotonFlotante titulo="Mostrar el chat" onClick={() => cambiarVista("chat")}>
+        <BotonFlotante titulo="Abrir el chat" onClick={() => cambiarVista("chat")}>
           <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
           </svg>
@@ -48,7 +53,7 @@ export function VistaOrbe({ textoEstado }: { textoEstado: string }) {
   );
 }
 
-/** Botón redondo que flota bajo el orbe. */
+/** Botón redondo que flota a los pies de Dahiana. */
 function BotonFlotante(props: { titulo: string; onClick: () => void; activo?: boolean; children: ReactNode }) {
   return (
     <button

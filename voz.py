@@ -15,10 +15,16 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from config import VOZ
+from config import NOMBRE_USUARIO, VOZ
 
 FRECUENCIA = 16_000  # Whisper trabaja con audio mono a 16 kHz
 DURACION_BLOQUE = 0.03  # segundos por bloque de micrófono que se analiza
+MARGEN_DEL_FILTRO = 0.9  # el filtro corta un poco antes de 8 kHz (el límite de 16 kHz) para dejar transición
+RADIO_DEL_FILTRO = 50  # muestras a cada lado del núcleo: más = filtro más preciso pero más lento
+HAZ_DE_BUSQUEDA = 5  # beam_size de Whisper: con 5 baja el error frente a 1 (medido) por ~0,2 s más por frase
+# Contexto que se le da a Whisper: así espera los nombres y temas de siempre ("Discord", no "el disco").
+CONTEXTO_WHISPER = (f"Conversación de {NOMBRE_USUARIO} con Dahiana, su asistente. Hablan de música, Spotify, "
+                    "Discord, programación y su día.")
 _SIN_VENTANA = getattr(subprocess, "CREATE_NO_WINDOW", 0)  # solo existe en Windows
 
 
@@ -41,7 +47,7 @@ class DetectorDeSilencio:
 
     calibracion: float = 0.3
     espera_maxima: float = 8.0
-    silencio_final: float = 0.9
+    silencio_final: float = 1.2  # con 0,9 cortaba si Nine hacía una pausa corta a mitad de la frase
     duracion_maxima: float = 20.0
     _energias_ruido: list[float] = field(default_factory=list)
     _umbral: float | None = None
@@ -91,11 +97,20 @@ class DetectorDeSilencio:
 
 
 def _remuestrear(audio: np.ndarray, origen: int) -> np.ndarray:
-    """Convierte audio de la frecuencia del micrófono a 16 kHz (interpolación lineal, basta para voz)."""
+    """Convierte audio de la frecuencia del micrófono a 16 kHz.
+
+    Antes de bajar la frecuencia filtra lo que está sobre ~7 kHz (sinc con ventana de Hamming): sin ese
+    filtro, los agudos del micrófono se "doblan" sobre la voz (aliasing) y Whisper entiende peor las
+    eses, efes y nombres en inglés.
+    """
     if origen == FRECUENCIA:
         return audio
+    corte = MARGEN_DEL_FILTRO * (FRECUENCIA / 2) / origen  # frecuencia de corte, relativa a la de origen
+    n = np.arange(-RADIO_DEL_FILTRO, RADIO_DEL_FILTRO + 1)
+    nucleo = 2 * corte * np.sinc(2 * corte * n) * np.hamming(len(n))
+    filtrado = np.convolve(audio, nucleo / nucleo.sum(), mode="same")
     tiempos_nuevos = np.arange(0, len(audio) / origen, 1 / FRECUENCIA)
-    return np.interp(tiempos_nuevos, np.arange(len(audio)) / origen, audio).astype(np.float32)
+    return np.interp(tiempos_nuevos, np.arange(len(audio)) / origen, filtrado).astype(np.float32)
 
 
 class Oido:
@@ -134,7 +149,13 @@ class Oido:
         """Transcribe audio mono de 16 kHz (float32) a texto en español."""
         self.preparar()
         segmentos, _ = self._modelo.transcribe(
-            audio, language="es", beam_size=1, vad_filter=True, hotwords=VOZ["palabras_clave"]
+            audio,
+            language="es",
+            beam_size=HAZ_DE_BUSQUEDA,
+            vad_filter=True,
+            hotwords=VOZ["palabras_clave"],
+            initial_prompt=CONTEXTO_WHISPER,
+            condition_on_previous_text=False,  # cada frase es corta: sin esto, un error se arrastra
         )
         return " ".join(s.text.strip() for s in segmentos).strip()
 
